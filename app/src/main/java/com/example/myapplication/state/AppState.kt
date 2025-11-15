@@ -1,4 +1,14 @@
 package com.example.myapplication.state
 
-class AppState {
+enum class AppState {
+    IDLE,
+    WALKING,
+    CHECKING_TRAFFIC_LIGHT,
+    DONE
+}
+
+enum class LightState {
+    NONE,
+    RED,
+    GREEN
 }
