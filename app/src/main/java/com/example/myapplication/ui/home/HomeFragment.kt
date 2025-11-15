@@ -6,6 +6,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -23,77 +24,62 @@ class HomeFragment : Fragment(), SensorEventListener {
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
-    // TTS
     private var tts: TextToSpeech? = null
-
-    // Camera Manager:
     private lateinit var cameraManager: CameraManager
 
-
-
-    // State
     private var appState: AppState = AppState.IDLE
 
-    // Steps
     private lateinit var sensorManager: SensorManager
     private var stepSensor: Sensor? = null
     private var stepsSinceStart: Int = 0
-    private val targetSteps: Int = 14   // ~10m, se poate ajusta
+    private val targetSteps = 14
 
-    // Traffic light voice throttling
-    private var lastSpokenLightState: LightState = LightState.NONE
-    private var lastLightStateTimestamp: Long = 0L
-    private val lightStateCooldownMs = 5000L // nu repetăm același mesaj mai des de 5s
+    private var lastSpokenLightState = LightState.NONE
+    private var lastLightStateTimestamp = 0L
+    private val lightStateCooldownMs = 5000L
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+        Log.d("HomeFragment", "onViewCreated")
 
-        // Sensor manager
         sensorManager = requireContext().getSystemService(Context.SENSOR_SERVICE) as SensorManager
         stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
 
         setupTts()
 
-        binding.startButton.setOnClickListener {
-            onStartAssistantClicked()
-        }
-
-
         cameraManager = CameraManager(
             fragment = this,
-            previewView = binding.cameraPreview,
+            previewView = binding.cameraPreview
         ) { state ->
+            Log.d("HomeFragment", "State primit din AI = $state")
             handleTrafficLightState(state)
         }
+
+        binding.startButton.setOnClickListener { onStartAssistantClicked() }
 
         updateStatusText()
     }
 
     private fun setupTts() {
-        tts = TextToSpeech(requireContext()) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale("ro", "RO")
-            }
+        tts = TextToSpeech(requireContext()) {
+            if (it == TextToSpeech.SUCCESS) tts?.language = Locale("ro", "RO")
         }
     }
 
     private fun onStartAssistantClicked() {
+        Log.d("HomeFragment", "Start button apăsat")
+
         if (!Permissions.allRequiredPermissionsGranted(requireContext())) {
+            Log.e("HomeFragment", "Permisiuni lipsă")
             Permissions.requestAllPermissions(this)
             return
         }
 
-        // PORNEȘTE CAMERA AICI
-        cameraManager.startCamera()   // <-- AICI E SCHIMBAREA
+        cameraManager.startCamera()
 
         appState = AppState.WALKING
         stepsSinceStart = 0
@@ -102,45 +88,34 @@ class HomeFragment : Fragment(), SensorEventListener {
         speak("Ghidarea a început. Mergi drept aproximativ zece metri.")
     }
 
-
     private fun updateStatusText() {
-        binding.statusText.text = when (appState) {
-            AppState.IDLE -> "Idle"
-            AppState.WALKING -> "Walking - counting steps"
-            AppState.CHECKING_TRAFFIC_LIGHT -> "Checking traffic light"
-            AppState.DONE -> "Done"
-        }
+        binding.statusText.text = appState.toString()
     }
 
     private fun speak(text: String) {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "app_tts_id")
+        Log.d("HomeFragment", "TTS: $text")
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts_id")
     }
-
-    // ====== SensorEventListener (pași) ======
 
     override fun onResume() {
         super.onResume()
         stepSensor?.also { sensor ->
-            sensorManager.registerListener(
-                this,
-                sensor,
-                SensorManager.SENSOR_DELAY_NORMAL
-            )
+            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
     }
 
     override fun onPause() {
         super.onPause()
+        cameraManager.stop()
         sensorManager.unregisterListener(this)
-        cameraManager.stop()  // <---- OPRIȚI CAMERA AICI
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_STEP_DETECTOR) return
 
         if (appState == AppState.WALKING) {
-            // Fiecare eveniment STEP_DETECTOR = un pas
-            stepsSinceStart += 1
+            stepsSinceStart++
+            Log.d("HomeFragment", "Step detected: $stepsSinceStart/${targetSteps}")
 
             if (stepsSinceStart >= targetSteps) {
                 appState = AppState.CHECKING_TRAFFIC_LIGHT
@@ -149,34 +124,23 @@ class HomeFragment : Fragment(), SensorEventListener {
             }
         }
     }
-
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // not used
+        Log.d("HomeFragment", "onAccuracyChanged: $accuracy")
     }
-
-    // ====== Hook pentru AI: va fi apelat de Membrul 2/3 ======
 
     fun handleTrafficLightState(state: LightState) {
         if (appState != AppState.CHECKING_TRAFFIC_LIGHT) return
-        if (state == LightState.NONE) return
 
         val now = System.currentTimeMillis()
-
-        // Nu mai spune același lucru dacă a fost zis recent
-        if (state == lastSpokenLightState && now - lastLightStateTimestamp < lightStateCooldownMs) {
-            return
-        }
+        if (state == lastSpokenLightState && now - lastLightStateTimestamp < lightStateCooldownMs) return
 
         lastSpokenLightState = state
         lastLightStateTimestamp = now
 
         when (state) {
-            LightState.RED -> {
-                speak("Semafor roșu. Așteaptă.")
-            }
+            LightState.RED -> speak("Semafor roșu. Așteaptă.")
             LightState.GREEN -> {
-                speak("Semafor verde. Poți începe să traversezi cu atenție.")
-                // După ce dăm verde, putem marca state-ul ca DONE (sau lăsăm să continue)
+                speak("Semafor verde. Poți traversa.")
                 appState = AppState.DONE
                 updateStatusText()
             }
@@ -184,29 +148,9 @@ class HomeFragment : Fragment(), SensorEventListener {
         }
     }
 
-    // ====== Permissions callback ======
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == Permissions.REQUEST_CODE_PERMISSIONS) {
-            if (Permissions.allRequiredPermissionsGranted(requireContext())) {
-                Toast.makeText(requireContext(), "Permisiuni acordate", Toast.LENGTH_SHORT).show()
-                onStartAssistantClicked()
-            } else {
-                Toast.makeText(requireContext(), "Permisiuni necesare neacordate", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
     override fun onDestroyView() {
-        super.onDestroyView()
         tts?.shutdown()
-        tts = null
         _binding = null
+        super.onDestroyView()
     }
 }
