@@ -20,6 +20,8 @@ import java.util.Locale
 import com.example.myapplication.ai.LocationHelper
 import com.example.myapplication.ai.VisionPipeline
 
+import com.example.myapplication.state.ObstacleState
+
 import org.json.JSONObject
 
 class HomeFragment : Fragment(), SensorEventListener {
@@ -211,28 +213,41 @@ class HomeFragment : Fragment(), SensorEventListener {
 
         setupTts()
 
+
         VisionPipeline.init(requireContext())
-
-        VisionPipeline.setTrafficLightPresenceListener { found ->
-            if (found) {
-                val now = System.currentTimeMillis()
-
-                if (now - lastPresenceAnnounceTime > presenceCooldownMs) {
-                    speak("Am detectat un semafor.")
-                    lastPresenceAnnounceTime = now
-                }
-            }
-        }
+//
+//        VisionPipeline.setTrafficLightPresenceListener { found ->
+//            if (found) {
+//                val now = System.currentTimeMillis()
+//
+//                if (now - lastPresenceAnnounceTime > presenceCooldownMs) {
+//                    speak("Am detectat un semafor.")
+//                    lastPresenceAnnounceTime = now
+//                }
+//            }
+//        }
+// 🔥 AICI adaugi callback-ul pentru culoare:
         VisionPipeline.setTrafficLightColorListener { color ->
             handleTrafficLightState(color)
         }
+
+
         cameraManager = CameraManager(
             fragment = this,
-            previewView = binding.cameraPreview
-        ) { state ->
-            Log.d("HomeFragment", "State primit din AI = $state")
-            handleTrafficLightState(state)
-        }
+            previewView = binding.cameraPreview,
+            onLightDetected = { state: LightState ->
+                Log.d("HomeFragment", "LightState din AI = $state")
+                handleTrafficLightState(state)
+            },
+            onObstacleDetected = { obstacleState: ObstacleState ->
+                Log.d("HomeFragment", "ObstacleState din AI = $obstacleState")
+
+                // aici poți adăuga și TTS, de exemplu:
+                // if (obstacleState == ObstacleState.OBSTACLE_AHEAD) {
+                //     speak("Atenție, obstacol în față.")
+                // }
+            }
+        )
 
         binding.startButton.setOnClickListener {
             onStartAssistantClicked()
@@ -265,7 +280,9 @@ class HomeFragment : Fragment(), SensorEventListener {
         // PORNIM Locația doar la Start
         locationHelper.getLocation { lat, lon ->
             handleLocation(lat, lon)
-            recalcRoute(lat, lon)
+            if (!routeLoaded) {
+                recalcRoute(lat, lon)   // se calculează doar PRIMA DATĂ
+            }
         }
 
         cameraManager.startCamera()
@@ -309,7 +326,7 @@ class HomeFragment : Fragment(), SensorEventListener {
 
         locationHelper.getLocation { lat, lon ->
             handleLocationUpdate(lat, lon)
-            recalcRoute(lat, lon)
+//            recalcRoute(lat, lon)
         }
 
         stepSensor?.also { sensor ->

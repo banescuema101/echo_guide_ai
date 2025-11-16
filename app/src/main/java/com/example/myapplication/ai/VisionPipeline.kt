@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.example.myapplication.state.LightState
+import com.example.myapplication.state.ObstacleState
 
 object VisionPipeline {
 
@@ -12,6 +13,8 @@ object VisionPipeline {
     // --- CALLBACK-URI ---
     private var onTrafficLightPresence: ((Boolean) -> Unit)? = null
     private var onTrafficLightColor: ((LightState) -> Unit)? = null
+    var obstacleDetector: ObstacleDetector? = null
+    private var frameIndex: Int = 0
 
     fun setTrafficLightPresenceListener(cb: (Boolean) -> Unit) {
         onTrafficLightPresence = cb
@@ -32,15 +35,18 @@ object VisionPipeline {
         Log.d("VisionPipeline", "YOLO INIT...")
         appContext = context.applicationContext
         detector = YoloV5OnnxDetector(context)
+        obstacleDetector = ObstacleDetector()
     }
 
-    fun process(image: ImageProxy): LightState {
+    fun process(image: ImageProxy): Pair<LightState, ObstacleState> {
 
         val d = detector
+        val o = obstacleDetector
+
         if (d == null || appContext == null) {
             Log.e("VisionPipeline", "YOLO NOT INITIALIZED!")
             image.close()
-            return LightState.NONE
+            return LightState.NONE to ObstacleState.NONE
         }
 
         val bitmap = try {
@@ -48,18 +54,33 @@ object VisionPipeline {
         } catch (e: Exception) {
             Log.e("VisionPipeline", "Bitmap error: ${e.message}")
             image.close()
-            return LightState.NONE
+            return LightState.NONE to ObstacleState.NONE
         }
 
-        // Închidem frame-ul înainte de YOLO
+        // Închidem frame-ul după ce am scos bitmap-ul
         image.close()
 
-        return try {
+        // 1) SEMAFOR
+        val lightState = try {
             d.detectTrafficLight(bitmap)
         } catch (e: Exception) {
             Log.e("VisionPipeline", "YOLO error: ${e.message}")
-            image.close()
             LightState.NONE
         }
+
+        // 2) OBSTACOL
+        var obstacleState = ObstacleState.NONE
+        if (o != null) {
+            // ca să nu omorâm performanța, facem din 3 în 3 frame-uri
+            obstacleState = if (frameIndex++ % 3 == 0) {
+                o.detect(bitmap)
+            } else {
+                ObstacleState.NONE
+            }
+            Log.d("OBSTACLE", "state=$obstacleState")
+        }
+
+        return lightState to obstacleState
     }
+
 }

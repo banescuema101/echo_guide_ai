@@ -13,12 +13,14 @@ import androidx.fragment.app.Fragment
 import androidx.camera.view.PreviewView
 import com.example.myapplication.ai.VisionPipeline
 import com.example.myapplication.state.LightState
+import com.example.myapplication.state.ObstacleState
 import java.util.concurrent.Executors
 
 class CameraManager(
     private val fragment: Fragment,
     private val previewView: PreviewView,
-    private val onLightDetected: (LightState) -> Unit
+    private val onLightDetected: (LightState) -> Unit,
+    private val onObstacleDetected: (ObstacleState) -> Unit
 ) {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -43,10 +45,12 @@ class CameraManager(
                 .build()
 
             analyzer.setAnalyzer(analysisExecutor) { image ->
-                val state = VisionPipeline.process(image)
+                // destructurăm Pair<LightState, ObstacleState>
+                val (lightState, obstacleState) = VisionPipeline.process(image)
 
                 Handler(Looper.getMainLooper()).post {
-                    onLightDetected(state)
+                    onLightDetected(lightState)
+                    onObstacleDetected(obstacleState)
                 }
             }
 
