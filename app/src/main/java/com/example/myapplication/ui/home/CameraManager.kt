@@ -1,16 +1,16 @@
 package com.example.myapplication.ui.home
 
 import android.annotation.SuppressLint
-import android.util.Log
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.camera.view.PreviewView
 import com.example.myapplication.ai.VisionPipeline
 import com.example.myapplication.state.LightState
 import com.example.myapplication.state.ObstacleState
@@ -20,7 +20,7 @@ class CameraManager(
     private val fragment: Fragment,
     private val previewView: PreviewView,
     private val onLightDetected: (LightState) -> Unit,
-    private val onObstacleDetected: (ObstacleState) -> Unit
+    private val onObstacleDetected: (ObstacleState) -> Unit   // 👈 aici garantăm callback-ul
 ) {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -45,12 +45,13 @@ class CameraManager(
                 .build()
 
             analyzer.setAnalyzer(analysisExecutor) { image ->
-                // destructurăm Pair<LightState, ObstacleState>
+
+                // returnează Pair<LightState, ObstacleState>
                 val (lightState, obstacleState) = VisionPipeline.process(image)
 
                 Handler(Looper.getMainLooper()).post {
                     onLightDetected(lightState)
-                    onObstacleDetected(obstacleState)
+                    onObstacleDetected(obstacleState)   // 👈 aici îl chemăm
                 }
             }
 

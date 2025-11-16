@@ -66,6 +66,39 @@ class HomeFragment : Fragment(), SensorEventListener {
     private val lastStates = ArrayDeque<LightState>()
     private val smoothingSize = 5
 
+
+    // PENTRU OBSTACOLE!
+    private val obstacleHistory = ArrayDeque<ObstacleState>()
+    private val obstacleSmoothingSize = 5  // luăm 5 frame-uri recente
+
+    private var lastObstacleSpeakTime = 0L
+    private val obstacleCooldown = 5000L // 5 secunde
+
+    private fun handleObstacleState(state: ObstacleState) {
+
+        // 1. Add to buffer
+        obstacleHistory.addLast(state)
+        if (obstacleHistory.size > obstacleSmoothingSize) {
+            obstacleHistory.removeFirst()
+        }
+
+        // 2. Need 2 detections in the last 5 frames
+        val count = obstacleHistory.count { it == ObstacleState.OBSTACLE_AHEAD }
+        if (count < 2) return
+
+        val now = System.currentTimeMillis()
+
+        // 3. Cooldown anti-spam
+        if (now - lastObstacleSpeakTime < obstacleCooldown) {
+            return
+        }
+
+        lastObstacleSpeakTime = now
+
+        // 4. Announce
+        speak("Atenție, obstacol în față.")
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -213,20 +246,7 @@ class HomeFragment : Fragment(), SensorEventListener {
 
         setupTts()
 
-
-        VisionPipeline.init(requireContext())
-//
-//        VisionPipeline.setTrafficLightPresenceListener { found ->
-//            if (found) {
-//                val now = System.currentTimeMillis()
-//
-//                if (now - lastPresenceAnnounceTime > presenceCooldownMs) {
-//                    speak("Am detectat un semafor.")
-//                    lastPresenceAnnounceTime = now
-//                }
-//            }
-//        }
-// 🔥 AICI adaugi callback-ul pentru culoare:
+        // AICI adaugi callback-ul pentru culoare:
         VisionPipeline.setTrafficLightColorListener { color ->
             handleTrafficLightState(color)
         }
@@ -235,19 +255,16 @@ class HomeFragment : Fragment(), SensorEventListener {
         cameraManager = CameraManager(
             fragment = this,
             previewView = binding.cameraPreview,
-            onLightDetected = { state: LightState ->
+            onLightDetected = { state ->
                 Log.d("HomeFragment", "LightState din AI = $state")
                 handleTrafficLightState(state)
             },
-            onObstacleDetected = { obstacleState: ObstacleState ->
+            onObstacleDetected = { obstacleState ->
                 Log.d("HomeFragment", "ObstacleState din AI = $obstacleState")
-
-                // aici poți adăuga și TTS, de exemplu:
-                // if (obstacleState == ObstacleState.OBSTACLE_AHEAD) {
-                //     speak("Atenție, obstacol în față.")
-                // }
+                handleObstacleState(obstacleState)  // 👈 aici tratăm obstacolele
             }
         )
+
 
         binding.startButton.setOnClickListener {
             onStartAssistantClicked()
@@ -322,7 +339,6 @@ class HomeFragment : Fragment(), SensorEventListener {
     // --- STEP SENSOR ---
     override fun onResume() {
         super.onResume()
-        VisionPipeline.init(requireContext())
 
         locationHelper.getLocation { lat, lon ->
             handleLocationUpdate(lat, lon)

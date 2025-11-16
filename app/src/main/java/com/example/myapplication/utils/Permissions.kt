@@ -11,7 +11,8 @@ object Permissions {
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
         Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.ACTIVITY_RECOGNITION
     )
 
     fun allRequiredPermissionsGranted(context: Context): Boolean {
