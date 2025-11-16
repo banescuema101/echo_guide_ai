@@ -48,16 +48,21 @@ class YoloV5OnnxDetector(private val context: Context) {
 
         for (row in data) {
             val objectness = row[4]
-            if (objectness < 0.25f) continue
+            // un pic mai permisiv
+            if (objectness < 0.20f) continue
 
             val classes = row.copyOfRange(5, row.size)
             val classId = argmax(classes)
             val classProb = classes[classId]
 
-            if (classProb < 0.25f) continue
+            if (classProb < 0.20f) continue
 
-            val label = labels[classId].lowercase()
-            if (!label.contains("traffic")) continue  // FILTRARE STRICTĂ
+            val rawLabel = labels.getOrElse(classId) { "unknown" }
+            val label = rawLabel.lowercase()
+
+            // din data.yaml: ['green', 'pedestrian Traffic Light', 'red', 'signal-light']
+            // ne interesează doar clasa cu „traffic”
+            if (!label.contains("traffic")) continue
 
             val cx = row[0]
             val cy = row[1]
@@ -69,12 +74,13 @@ class YoloV5OnnxDetector(private val context: Context) {
             val right = (cx + w / 2).toInt()
             val bottom = (cy + h / 2).toInt()
 
-            // Ignoră semafoarele prea mici (zgomot)
-            if (w < 20 || h < 50) continue
+            // ignorăm semafoarele FOARTE mici
+            if (w < 10 || h < 25) continue
 
-            detections.add(
-                Detection(label, classProb, Rect(left, top, right, bottom))
-            )
+            val rect = Rect(left, top, right, bottom)
+            detections.add(Detection(rawLabel, classProb, rect))
+
+            Log.d("YOLO_DET", "det=$rawLabel score=$classProb rect=$rect")
         }
 
         return detections
@@ -93,10 +99,11 @@ class YoloV5OnnxDetector(private val context: Context) {
                 val g = ((p shr 8) and 0xFF) / 255f
                 val b = (p and 0xFF) / 255f
 
-                // NCHW: B, G, R
-                arr[idx] = b
+// NCHW: R, G, B
+                arr[idx] = r
                 arr[idx + inputSize * inputSize] = g
-                arr[idx + 2 * inputSize * inputSize] = r
+                arr[idx + 2 * inputSize * inputSize] = b
+
 
                 idx++
             }
@@ -212,56 +219,44 @@ class YoloV5OnnxDetector(private val context: Context) {
             return count
         }
 
-        // Intervalele de hue pot fi ajustate după ce testezi pe imaginile tale
-        // Sus (roșu)
-        val redCount = countColor(0.00f, 0.33f) { hue, _, _ ->
-            hue < 15f || hue > 345f       // roșu în jur de 0°
+        // Sus (roșu) – jumătatea de sus a semaforului
+        val redCount = countColor(0.00f, 0.50f) { hue, _, _ ->
+            // roșu în jur de 0°
+            hue < 15f || hue > 345f
         }
 
-        // Mijloc (galben)
-        val yellowCount = countColor(0.33f, 0.66f) { hue, _, _ ->
-            hue in 20f..60f               // galben / portocaliu
+        // Jos (verde) – jumătatea de jos
+        val greenCount = countColor(0.50f, 1.00f) { hue, _, _ ->
+            hue in 80f..160f
         }
 
-        // Jos (verde)
-        val greenCount = countColor(0.66f, 1.00f) { hue, _, _ ->
-            hue in 80f..160f              // verde
-        }
+        Log.d("YOLO_LIGHT", "redCount=$redCount greenCount=$greenCount")
 
-        Log.d("YOLO_LIGHT", "redCount=$redCount yellowCount=$yellowCount greenCount=$greenCount")
-
-        val maxCount = maxOf(redCount, yellowCount, greenCount)
-
-        // prag minim ca să nu ne păcălim din zgomot
+        val total = redCount + greenCount
         val MIN_PIXELS = 20
-        if (maxCount < MIN_PIXELS) {
+
+        // dacă nu avem suficienți pixeli colorați, nu ne pronunțăm
+        if (total < MIN_PIXELS) {
             return LightState.NONE
         }
 
-        // Dacă două culori sunt foarte apropiate ca număr de pixeli, considerăm că nu știm sigur
-        fun areClose(a: Int, b: Int): Boolean {
-            if (a == 0 || b == 0) return false
-            val ratio = min(a, b).toFloat() / max(a, b).toFloat()
-            return ratio > 0.75f // 75% din cealaltă → prea apropiate
+        // raportul de roșu din total
+        val redRatio = redCount.toFloat() / total.toFloat()
+
+        // dacă roșu e clar dominant (>65%)
+        if (redCount > 2) {
+            Log.d("YOLO_LIGHT", "semafor roșu")
+            return LightState.RED
         }
 
-        return when {
-            maxCount == redCount &&
-                    !areClose(redCount, yellowCount) &&
-                    !areClose(redCount, greenCount) ->
-                LightState.RED
-
-            maxCount == yellowCount &&
-                    !areClose(yellowCount, redCount) &&
-                    !areClose(yellowCount, greenCount) ->
-                LightState.YELLOW
-
-            maxCount == greenCount &&
-                    !areClose(greenCount, yellowCount) &&
-                    !areClose(greenCount, redCount) ->
-                LightState.GREEN
-
-            else -> LightState.NONE
+        // dacă verde e clar dominant (<35% roșu)
+        if (greenCount > 2) {
+            Log.d("YOLO_LIGHT", "semafor verde")
+            return LightState.GREEN
         }
+
+        // altfel sunt prea apropiate (posibil reflexii / lumină dubioasă)
+        return LightState.NONE
     }
+
 }
