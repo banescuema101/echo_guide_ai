@@ -8,11 +8,10 @@ import androidx.fragment.app.Fragment
 
 object Permissions {
 
-    const val REQUEST_CODE_PERMISSIONS = 1001
-
     private val REQUIRED_PERMISSIONS = arrayOf(
         Manifest.permission.CAMERA,
-        Manifest.permission.ACTIVITY_RECOGNITION
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
     )
 
     fun allRequiredPermissionsGranted(context: Context): Boolean {
@@ -26,7 +25,7 @@ object Permissions {
         ActivityCompat.requestPermissions(
             fragment.requireActivity(),
             REQUIRED_PERMISSIONS,
-            REQUEST_CODE_PERMISSIONS
+            10
         )
     }
 }
