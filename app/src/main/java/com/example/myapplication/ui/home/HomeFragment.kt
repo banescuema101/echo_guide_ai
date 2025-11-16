@@ -151,7 +151,22 @@ class HomeFragment : Fragment(), SensorEventListener {
                     val lon = loc.getDouble(0)
                     val lat = loc.getDouble(1)
 
-                    val instruction = stepObj.getString("instruction") // AICI e magia
+                    // 🔥 AICI e modificarea importantă:
+                    val instruction =
+                        if (stepObj.has("instruction")) {
+                            stepObj.getString("instruction")
+                        } else {
+                            val type = maneuver.optString("type", "")
+                            val modifier = maneuver.optString("modifier", "")
+
+                            when (type) {
+                                "turn" -> "Fă o întoarcere spre $modifier"
+                                "depart" -> "Pornire spre $modifier"
+                                "arrive" -> "Ai ajuns la destinație"
+                                "new name" -> "Continuă pe strada următoare"
+                                else -> "Continuați înainte"
+                            }
+                        }
 
                     newSteps += RouteStep(lat, lon, instruction)
                 }
@@ -168,6 +183,7 @@ class HomeFragment : Fragment(), SensorEventListener {
                 Log.e("NAV", "Eroare recalculare rută: ${e.message}")
             }
         }.start()
+
     }
 
 
