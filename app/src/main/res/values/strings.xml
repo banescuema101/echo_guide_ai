@@ -1,9 +1,8 @@
 <resources>
-    <string name="app_name">My Application</string>
+    <string name="app_name">Echo Guide</string>
     <string name="title_home">Echo Guide</string>
     <string name="title_dashboard">Dashboard</string>
     <string name="title_notifications">Notifications</string>
     <string name="start_assistant">Start assistant</string>
     <string name="idle">Idle</string>
-
 </resources>
